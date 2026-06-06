@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Award,
@@ -11,6 +14,8 @@ import {
   Sparkles,
   Trophy,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { User } from "@supabase/supabase-js";
 
 const navItems = [
   { href: "/", label: "대시보드", icon: Home },
@@ -23,6 +28,61 @@ const navItems = [
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  useEffect(() => {
+    // 1. Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    // 2. Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!showDropdown) return;
+    const handleOutsideClick = () => setShowDropdown(false);
+    document.addEventListener("click", handleOutsideClick);
+    return () => document.removeEventListener("click", handleOutsideClick);
+  }, [showDropdown]);
+
+  const handleLogin = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: typeof window !== "undefined" ? window.location.origin + "/mypage" : "",
+        },
+      });
+      if (error) throw error;
+    } catch (e) {
+      console.error("Login error:", e);
+      alert("로그인 중 오류가 발생했습니다.");
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } catch (e) {
+      console.error("Logout error:", e);
+      alert("로그아웃 중 오류가 발생했습니다.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F8F9FC] text-[#1F2937]">
       <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-white">
@@ -30,7 +90,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <button
               aria-label="메뉴 열기"
-              className="grid size-10 place-items-center rounded-xl border border-[#E5E7EB] bg-white text-[#6B7280] lg:hidden"
+              className="grid size-10 place-items-center rounded-xl border border-[#E5E7EB] bg-white text-[#6B7280] lg:hidden cursor-pointer"
               type="button"
             >
               <Menu size={20} />
@@ -51,20 +111,75 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <button
               aria-label="알림"
-              className="grid size-10 place-items-center rounded-xl border border-[#E5E7EB] bg-white text-[#6B7280]"
+              className="grid size-10 place-items-center rounded-xl border border-[#E5E7EB] bg-white text-[#6B7280] cursor-pointer"
               type="button"
             >
               <Bell size={18} />
             </button>
-            <div className="flex items-center gap-3 rounded-xl border border-[#E5E7EB] bg-white py-1 pl-1 pr-3">
-              <span className="grid size-8 place-items-center rounded-lg bg-[#FFE0B2] text-sm font-semibold text-[#8A4B1F]">
-                B
-              </span>
-              <div className="hidden text-sm sm:block">
-                <p className="font-semibold">빛이나</p>
-                <p className="text-xs text-[#6B7280]">AI 실용자</p>
+
+            {loading ? (
+              <div className="h-10 w-28 animate-pulse rounded-xl bg-[#F3F4F6]" />
+            ) : user ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDropdown(!showDropdown);
+                  }}
+                  className="flex items-center gap-3 rounded-xl border border-[#E5E7EB] bg-white py-1 pl-1 pr-3 hover:bg-[#F8F9FC] transition cursor-pointer text-left"
+                >
+                  {user.user_metadata?.avatar_url ? (
+                    <img
+                      src={user.user_metadata.avatar_url}
+                      alt="Profile"
+                      className="size-8 rounded-lg object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span className="grid size-8 place-items-center rounded-lg bg-[#FFE0B2] text-sm font-semibold text-[#8A4B1F]">
+                      {(user.user_metadata?.full_name || user.email || "U")[0].toUpperCase()}
+                    </span>
+                  )}
+                  <div className="hidden text-sm sm:block">
+                    <p className="font-semibold truncate max-w-[80px]">
+                      {user.user_metadata?.full_name || user.email?.split("@")[0]}
+                    </p>
+                    <p className="text-xs text-[#6B7280]">로그인됨</p>
+                  </div>
+                </button>
+
+                {showDropdown && (
+                  <div className="absolute right-0 mt-2 w-48 rounded-2xl border border-[#E5E7EB] bg-white p-2 shadow-xl shadow-slate-200/80 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <Link
+                      href="/mypage"
+                      onClick={() => setShowDropdown(false)}
+                      className="block w-full rounded-xl px-4 py-2.5 text-left text-sm text-[#1F2937] hover:bg-[#FFF3E0] transition"
+                    >
+                      마이페이지
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDropdown(false);
+                        handleLogout();
+                      }}
+                      className="block w-full rounded-xl px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 transition cursor-pointer"
+                    >
+                      로그아웃
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleLogin}
+                className="inline-flex h-10 items-center justify-center rounded-xl bg-[#FF8A65] px-4 text-sm font-semibold text-white shadow-sm shadow-orange-200 hover:bg-[#F9734E] transition cursor-pointer"
+              >
+                구글 로그인
+              </button>
+            )}
           </div>
         </nav>
       </header>
